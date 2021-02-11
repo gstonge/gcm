@@ -10,7 +10,7 @@ from numba import jit
 import numba as nb
 
 def stable_branch(beta, state_meta, param_init, param_var, fixed_args=(),
-                  tvar=100, h=0.01, rtol=10**(-8), Jtol=10**(-2),
+                  h=0.01, rtol=10**(-8), Jtol=10**(-2),
                   min_density=10**(-4),max_iter=1000, verbose=True):
     """stable_branch captures the non-trivial stable branch starting from
        some initial parameter until the bifurcation.
@@ -34,7 +34,6 @@ def stable_branch(beta, state_meta, param_init, param_var, fixed_args=(),
     :param param_init: float for the initial value of the parameter to vary
     :param param_var: float (positive or negative) for the parameter variation
     :param fixed_args: tuple of extra arguments for beta that are fixed.
-    :param tvar: float for the initial time relaxation to stationary state
     :param h: float for the step size of the linearly implicit Euler.
     :param rtol: float for the relative variation desired on the convergence.
     :param Jtol: float for tolerance on Jacobian variation for stability
@@ -57,7 +56,6 @@ def stable_branch(beta, state_meta, param_init, param_var, fixed_args=(),
     param = param_init
     sm,fni = initialize(state_meta, initial_density=0.9)
     inf_mat = infection_matrix(beta,nmax,args=(param_init,*fixed_args))
-    # sm,fni = advance(sm, fni, tvar, inf_mat, state_meta)
     r0 = mf_from_state(fni,inf_mat,state_meta)
     r = stationary_state(r0,inf_mat,state_meta,stable=True,
                          h=h,rtol=rtol,max_iter=max_iter,
