@@ -160,9 +160,8 @@ def optimize_fni(initial_density, inf_mat, state_meta):
                     fni[n,i_] -= fni[n,i]
                     assert np.isclose(1,np.sum(fni[n]))
                     psi -= fni[n,i]*pn[n]*(i-i_)
-                    if np.isclose(fni[n,i],1):
-                        #we are not finished, hence the new i is optimal
-                        iopt[n] = i
+                    #if we are not finished, new i is 'optimal'
+                    iopt[n] = i
                 else:
                     #push again in the queue
                     heapq.heappush(Q, (-Rni, counter, (n,i)))
