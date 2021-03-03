@@ -8,10 +8,11 @@ fraction of infected.
 import numpy as np
 import heapq
 from scipy.optimize import linprog
+from .ode import *
 from numba import jit
 
-def objective_function_vector(inf_mat, state_meta):
-    """objective_function_vector returns the canonical c vector for
+def _objective_function_vector(inf_mat, state_meta):
+    """_objective_function_vector returns the canonical c vector for
     optimization using linear programming. The objective function is
     therefore
 
@@ -36,8 +37,8 @@ def objective_function_vector(inf_mat, state_meta):
                 c[n][i] = 0.
     return c.reshape((nmax+1)**2)
 
-def constraint_arrays(sm,state_meta):
-    """constraint_arrays returns the canonical arrays for implementing equality
+def _constraint_arrays(sm,state_meta):
+    """_constraint_arrays returns the canonical arrays for implementing equality
     constraints with linear programming. Constraints take the form
 
     A @ x = b
@@ -93,8 +94,8 @@ def optimize_fni_lp(initial_density,inf_mat,state_meta):
     mmax = state_meta[0]
     nmax = state_meta[1]
     sm = np.ones(mmax+1)*(1-initial_density)
-    c = objective_function_vector(inf_mat,state_meta)
-    A,b = constraint_arrays(sm,state_meta)
+    c = _objective_function_vector(inf_mat,state_meta)
+    A,b = _constraint_arrays(sm,state_meta)
     bounds = (0.,1.)
 
     # options = {'tol':10**(-15)}
@@ -208,6 +209,13 @@ def optimize_sm(initial_density,state_meta):
     fni = initialize(state_meta, q)[1]
 
     return sm,fni
+
+def objective_function(fni, inf_mat, state_meta):
+    imat = state_meta[5]
+    nmat = state_meta[6]
+    pnmat = state_meta[7]
+
+    return np.sum(inf_mat*(nmat-imat)*fni*pnmat)
 
 if __name__ == '__main__':
     from ode import *
