@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 This module provides functions to find the optimal initial conditions
-to maximize the early spread of the contagion, given a fixed initial
+to maximize the early spread of contagions, given a fixed initial
 fraction of infected.
-
-We make use of the linear programming algorithms provided by scipy.
 """
 
 import numpy as np
+import heapq
 from scipy.optimize import linprog
+from numba import jit
 
 def objective_function_vector(inf_mat, state_meta):
     """objective_function_vector returns the canonical c vector for
@@ -79,9 +79,12 @@ def constraint_arrays(sm,state_meta):
     A.append(M)
     return np.array(A),np.array(b)
 
-def optimize_fni(initial_density,inf_mat,state_meta):
-    """optimize_fni returns the fni matrix that optimize the early spread,
-       assuming randomly chosen nodes (irrespective of their membership).
+def optimize_fni_lp(initial_density,inf_mat,state_meta):
+    """optimize_fni_lp returns the state with the fni matrix that optimize the
+    early spread, assuming randomly chosen nodes (irrespective of their
+    membership).
+
+    Note: this function use linear programming to solve the problem
 
     :param initial_density: float for the initial fraction of infected nodes
     :param inf_mat: array of shape (nmax+1,nmax+1) representing the infection rate
@@ -89,25 +92,96 @@ def optimize_fni(initial_density,inf_mat,state_meta):
     """
     mmax = state_meta[0]
     nmax = state_meta[1]
-    sm = np.ones(mmax+1)*(1.-initial_density)
+    sm = np.ones(mmax+1)*(1-initial_density)
     c = objective_function_vector(inf_mat,state_meta)
     A,b = constraint_arrays(sm,state_meta)
     bounds = (0.,1.)
-    res = linprog(c,A_eq=A,b_eq=b,bounds=bounds)
+
+    # options = {'tol':10**(-15)}
+    res = linprog(c,A_eq=A,b_eq=b,bounds=bounds)#, options=options)
     if res.success:
         fni = np.array(res.x).reshape((nmax+1,nmax+1))
         #clean up elements that should be 0 and normalize
         for n in range(nmax+1):
             fni[n][n+1:] = 0.
             fni[n] /= np.sum(fni[n])
-        return fni
     else:
         raise RuntimeError('optimization failed')
 
+    return sm,fni
+
+def optimize_fni(initial_density, inf_mat, state_meta):
+    """optimize_fni returns the state with the fni matrix that optimize the
+    early spread, assuming randomly chosen nodes (irrespective of their
+    membership).
+
+    :param initial_density: float for the initial fraction of infected nodes
+    :param inf_mat: array of shape (nmax+1,nmax+1) representing the infection rate
+    :param state_meta: tuple of arrays encoding information of the structure.
+    """
+    mmax = state_meta[0]
+    nmax = state_meta[1]
+    imat = state_meta[5]
+    nmat = state_meta[6]
+    sm = np.ones(mmax+1)*(1-initial_density)
+    pn = state_meta[4]
+    #initialize at all 0 nodes infected
+    fni = np.zeros((nmax+1,nmax+1))
+    fni[:,0] = 1.
+    #empty iopt dictionary for optimal i conf
+    iopt = dict()
+    #identify infected budget, in terms of i*fni*pn
+    psi = np.sum(np.arange(nmax+1)*pn)*initial_density
+    #initialize priority queue with cost-efficiency ratio
+    Q = []
+    heapq.heapify(Q)
+    counter = 0
+    for n in range(2,nmax+1):
+        if pn[n] > 0:
+            for i in range(1,n+1):
+                Rni = inf_mat[n,i]*(n-i)/i
+                heapq.heappush(Q, (-Rni, counter, (n,i)))
+                                    #counter is used to break ties
+                counter += 1
+
+    #while Q is not empty, and budget not expanded
+    while Q and not np.isclose(psi,0):
+        item = heapq.heappop(Q)
+        n,i = item[2]
+        if n in iopt:
+            #there is already a fni configuration chosen
+            if i > iopt[n]:
+                i_ = iopt[n]
+                #its possible that the new config is better
+                Rni = (inf_mat[n,i]*(n-i)-inf_mat[n,i_]*(n-i_))/(i-i_)
+                if len(Q) == 0 or -Rni <= Q[0][0]:
+                    #apply the configuration
+                    fni[n,i] = min((1,psi/(pn[n]*(i-i_))))
+                    fni[n,i_] -= fni[n,i]
+                    assert np.isclose(1,np.sum(fni[n]))
+                    psi -= fni[n,i]*pn[n]*(i-i_)
+                    if np.isclose(fni[n,i],1):
+                        #we are not finished, hence the new i is optimal
+                        iopt[n] = i
+                else:
+                    #push again in the queue
+                    heapq.heappush(Q, (-Rni, counter, (n,i)))
+                    counter += 1
+
+        else:
+            #first time n is encountered
+            fni[n,i] = min((1,psi/(pn[n]*i)))
+            fni[n,0] -= fni[n,i]
+            assert np.isclose(1,np.sum(fni[n]))
+            psi -= fni[n,i]*pn[n]*i
+            iopt[n] = i
+
+    return sm, fni
+
 
 def optimize_sm(initial_density,state_meta):
-    """optimize_sm returns the sm vector that optimize the early spread,
-       assuming that nodes within groups are infected at random.
+    """optimize_sm returns the state with the sm vector that optimize the
+    early spread, assuming that nodes within groups are infected at random.
 
        We assume that the initial density of infected node is small,
        in which case we can use the optimal heuristic to infect nodes
@@ -117,6 +191,7 @@ def optimize_sm(initial_density,state_meta):
     :param state_meta: tuple of arrays encoding information of the structure.
     """
     mmax = state_meta[0]
+    m = state_meta[2]
     gm = state_meta[3]
     sm = np.ones(mmax+1,dtype=np.float64)
     density_allowed = 0.
@@ -129,7 +204,11 @@ def optimize_sm(initial_density,state_meta):
             sm[current_m] = 0
             density_allowed += gm[current_m]
             current_m -= 1
-    return sm
+    #identify q, the density within groups, and get fni
+    q = 1 - np.sum(gm*m*sm)/np.sum(m*gm)
+    fni = initialize(state_meta, q)[1]
+
+    return sm,fni
 
 if __name__ == '__main__':
     from ode import *
