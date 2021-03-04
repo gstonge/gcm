@@ -5,6 +5,7 @@ to maximize the early spread of contagions, given a fixed initial
 fraction of infected.
 """
 
+import warnings
 import numpy as np
 import heapq
 from scipy.optimize import linprog
@@ -93,7 +94,10 @@ def optimize_fni_lp(initial_density,inf_mat,state_meta):
     """
     mmax = state_meta[0]
     nmax = state_meta[1]
-    sm = np.ones(mmax+1)*(1-initial_density)
+    m = state_meta[2]
+    gm = state_meta[3]
+
+    sm = (1-initial_density*m/np.sum(m*gm))
     c = _objective_function_vector(inf_mat,state_meta)
     A,b = _constraint_arrays(sm,state_meta)
     bounds = (0.,1.)
@@ -122,17 +126,21 @@ def optimize_fni(initial_density, inf_mat, state_meta):
     """
     mmax = state_meta[0]
     nmax = state_meta[1]
+    m = state_meta[2]
+    gm = state_meta[3]
+    pn = state_meta[4]
     imat = state_meta[5]
     nmat = state_meta[6]
-    sm = np.ones(mmax+1)*(1-initial_density)
-    pn = state_meta[4]
+
+    sm = (1-initial_density*m/np.sum(m*gm))
     #initialize at all 0 nodes infected
     fni = np.zeros((nmax+1,nmax+1))
     fni[:,0] = 1.
     #empty iopt dictionary for optimal i conf
     iopt = dict()
     #identify infected budget, in terms of i*fni*pn
-    psi = np.sum(np.arange(nmax+1)*pn)*initial_density
+    psi = np.sum(np.arange(nmax+1)*pn)*initial_density*\
+            np.sum(m**2*gm)/np.sum(m*gm)**2
     #initialize priority queue with cost-efficiency ratio
     Q = []
     heapq.heapify(Q)
@@ -207,6 +215,9 @@ def optimize_sm(initial_density,state_meta):
     #identify q, the density within groups, and get fni
     q = 1 - np.sum(gm*m*sm)/np.sum(m*gm)
     fni = initialize(state_meta, q)[1]
+    if q > 1/2:
+        #for contagions with supralinear (or linear) exponents
+        warnings.warn("The sm solution might be suboptimal")
 
     return sm,fni
 

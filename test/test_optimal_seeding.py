@@ -163,6 +163,9 @@ class TestFniOptimization:
 
         fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
         fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
+        print(fni_lp,fni)
+        print(objective_function(fni_lp,inf_mat,state_meta),
+              objective_function(fni,inf_mat,state_meta))
         assert np.isclose(objective_function(fni_lp,inf_mat,state_meta),
                           objective_function(fni,inf_mat,state_meta),
                           rtol=10**(-3))
