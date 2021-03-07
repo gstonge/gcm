@@ -12,13 +12,43 @@ from gcm import *
 from scipy.special import loggamma
 
 
+def constraint_prob(sm,fni,fni_tilde,state_meta):
+    assert (fni <= 1).all() and (fni >= 0).all()
 
-def constraint(fni,state_meta):
+def constraint_norm(sm,fni,fni_tilde,state_meta):
+    for n in range(2,len(fni)):
+        assert np.isclose(np.sum(fni[n]),1)
+
+def constraint_norm_tilde(sm,fni,fni_tilde,state_meta):
+    for n in range(2,len(fni_tilde)):
+        assert np.isclose(np.sum(fni_tilde[n]),1)
+
+def constraint_stubs(sm,fni,fni_tilde,state_meta):
+    nmax = state_meta[1]
+    m = state_meta[2]
+    gm = state_meta[3]
+    pn = state_meta[4]
     imat = state_meta[5]
     nmat = state_meta[6]
     pnmat = state_meta[7]
-    return np.sum(fni*(nmat-imat)*pnmat)
+    nmean = np.sum(pn*np.arange(nmax+1))
+    mmean = np.sum(m*gm)
+    assert np.isclose(np.sum(fni*(nmat-imat)*pnmat),
+                      np.sum(m*sm*gm)*nmean/mmean)
 
+def constraint_eta(sm,fni,fni_tilde,state_meta):
+    nmax = state_meta[1]
+    m = state_meta[2]
+    pn = state_meta[4]
+    imat = state_meta[5]
+    pnmat = state_meta[7]
+    nmean = np.sum(pn*np.arange(nmax+1))
+
+    eta = np.sum(imat*fni_tilde*pnmat)/nmean
+    assert np.isclose((1.-eta)**m,sm).all()
+
+constraint_list = [constraint_prob,constraint_norm,constraint_stubs,
+                   constraint_eta, constraint_norm_tilde]
 
 class TestFniOptimization:
     def test_reg_net_1(self):
@@ -40,10 +70,13 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
 
-        assert np.isclose(fni_lp[nmax],fni[nmax]).all()
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
+
+
+
 
     def test_reg_net_2(self):
         #structure
@@ -64,9 +97,11 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 10**(-1)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        assert np.isclose(fni_lp[nmax],fni[nmax],rtol=10**(-3),atol=10**(-5)).all()
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
+
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
+
 
     def test_reg_net_3(self):
         #structure
@@ -87,9 +122,10 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 5*10**(-1)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        assert np.isclose(fni_lp[nmax],fni[nmax],rtol=10**(-3),atol=10**(-5)).all()
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
+
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
 
 
     def test_hom_net_1(self):
@@ -111,9 +147,11 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        assert np.isclose(fni_lp[2:nmax],fni[2:nmax],rtol=10**(-3),atol=10**(-5)).all()
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
+
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
+
 
     def test_hom_net_2(self):
         #structure
@@ -134,9 +172,11 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 5*10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        assert np.isclose(fni_lp[2:nmax],fni[2:nmax],rtol=10**(-3),atol=10**(-5)).all()
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
+
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
+
 
     def test_hom_net_3(self):
         #structure
@@ -161,15 +201,10 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 10**(-3)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        print(fni_lp,fni)
-        print(objective_function(fni_lp,inf_mat,state_meta),
-              objective_function(fni,inf_mat,state_meta))
-        assert np.isclose(objective_function(fni_lp,inf_mat,state_meta),
-                          objective_function(fni,inf_mat,state_meta),
-                          rtol=10**(-3))
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
 
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
 
     def test_het_1(self):
         #structure
@@ -190,10 +225,10 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 5*10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
 
-        assert np.isclose(fni_lp[2:nmax],fni[2:nmax],rtol=10**(-3),atol=10**(-5)).all()
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
 
 
     def test_het_2(self):
@@ -215,10 +250,11 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 5*10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
 
-        assert np.isclose(fni_lp[2:nmax],fni[2:nmax],rtol=10**(-3),atol=10**(-5)).all()
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
+
 
     def test_het_3(self):
         #structure
@@ -239,14 +275,8 @@ class TestFniOptimization:
         inf_mat = infection_matrix(beta,nmax,args=(trate,nu))
         initial_density = 5*10**(-2)
 
-        fni_lp = optimize_fni_lp(initial_density,inf_mat,state_meta)[1]
-        fni = optimize_fni(initial_density,inf_mat,state_meta)[1]
-        # print(fni_lp)
-        # print(fni)
-        # print(objective_function(fni_lp,state_meta,inf_mat))
-        # print(objective_function(fni,state_meta,inf_mat))
-        # print(constraint(fni_lp,state_meta))
-        # print(constraint(fni,state_meta))
+        sm,fni,fni_tilde = optimize_fni(initial_density,inf_mat,state_meta)
 
-        assert np.isclose(fni_lp[2:nmax],fni[2:nmax],rtol=10**(-3),atol=10**(-5)).all()
+        for const in constraint_list:
+            const(sm,fni,fni_tilde,state_meta)
 
