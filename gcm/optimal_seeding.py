@@ -282,21 +282,23 @@ def objective_function(fni, inf_mat, state_meta):
 
     return np.sum(inf_mat*(nmat-imat)*fni*pnmat)
 
-if __name__ == '__main__':
-    from ode import *
-    nmax = 10
-    mmax = 10
-    pn = np.arange(nmax+1,dtype=np.float64)
-    pn[2:] = pn[2:]**(-2.5)
-    pn[0:2] = 0.
-    pn /= np.sum(pn)
-    gm = np.arange(mmax+1,dtype=np.float64)
-    gm[2:] = gm[2:]**(-2.5)
-    gm[0:2] = 0.
-    gm /= np.sum(gm)
-    state_meta = get_state_meta(mmax, nmax, gm, pn)
-    beta = lambda n,i: 0.5*i**2.
-    inf_mat = infection_matrix(beta,nmax)
-    initial_density = 0.02
-    print(optimize_sm(initial_density,state_meta))
-    print(optimize_fni(initial_density,inf_mat,state_meta))
+def zeta_limit(inf_mat,state_meta):
+    mmax = state_meta[0]
+    nmax = state_meta[1]
+    m = state_meta[2]
+    gm = state_meta[3]
+    mmean = np.sum(m*gm)
+    mexcess = np.sum(m*(m-1)*gm)/np.sum(m*gm)
+    imat = state_meta[5]
+    nmat = state_meta[6]
+    n = np.arange(nmax+1)
+    pn = state_meta[4]
+    Rni = np.zeros((nmax+1,nmax+1))
+    Rni[2:,1:] = np.divide(inf_mat[2:,1:]*(nmat[2:,1:]-imat[2:,1:]),
+                           imat[2:,1:], where = (imat[2:,1:] > 0))
+    zeta = np.amax(Rni)*np.sum(pn*n)
+    zeta += np.sum(pn*n*(n-1)*inf_mat[:,1])*mexcess
+    zeta /= mmax
+    zeta /= np.sum(pn*n*(n-1)*inf_mat[:,1])
+    return zeta
+
